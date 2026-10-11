@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # Daily Ops setup for macOS — wires the `daily-ops-mac` preset into a routine.
 #
-#   scripts/daily_ops_setup.sh            # schedule tasks + install launchd agent
+#   scripts/daily_ops_setup.sh            # schedule tasks + install launchd agents
 #   scripts/daily_ops_setup.sh --init     # also (re)install the preset config
 #   scripts/daily_ops_setup.sh --uninstall
 #
-# Re-running is safe for the launchd agent; scheduled tasks are appended, so
+# Installs two always-on launchd agents:
+#   com.openjarvis.scheduler — runs the scheduled routine below
+#   com.openjarvis.listen    — clap twice, then speak to Jarvis
+#
+# Re-running is safe for the launchd agents; scheduled tasks are appended, so
 # clear old ones first with `jarvis scheduler list` / `jarvis scheduler cancel`.
 set -euo pipefail
 
 TZ_NAME="${DAILY_OPS_TZ:-America/Sao_Paulo}"
-LABEL="com.openjarvis.scheduler"
-PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+AGENTS_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$HOME/.openjarvis/logs"
+LABELS=(com.openjarvis.scheduler com.openjarvis.listen)
 
 JARVIS="$(command -v jarvis || true)"
 if [[ -z "$JARVIS" ]]; then
@@ -21,9 +25,11 @@ if [[ -z "$JARVIS" ]]; then
 fi
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
-  rm -f "$PLIST"
-  echo "Removed $LABEL. Scheduled tasks remain; see 'jarvis scheduler list'."
+  for label in "${LABELS[@]}"; do
+    launchctl bootout "gui/$(id -u)" "$AGENTS_DIR/$label.plist" 2>/dev/null || true
+    rm -f "$AGENTS_DIR/$label.plist"
+  done
+  echo "Removed launchd agents. Scheduled tasks remain; see 'jarvis scheduler list'."
   exit 0
 fi
 
@@ -59,35 +65,47 @@ what matters for a solutions architect." \
   --type cron --value "0 8 * * 1" --timezone "$TZ_NAME" \
   --agent deep_research --tools "web_search,knowledge_search,think"
 
-echo "→ Installing launchd agent so the scheduler survives reboots"
-mkdir -p "$LOG_DIR" "$(dirname "$PLIST")"
-cat > "$PLIST" <<EOF
+# install_agent LABEL LOG_NAME JARVIS_ARGS... — always-on launchd agent
+install_agent() {
+  local label="$1" log="$2" plist="$AGENTS_DIR/$1.plist" args="" arg
+  shift 2
+  for arg in "$JARVIS" "$@"; do
+    args+="        <string>$arg</string>"$'\n'
+  done
+  mkdir -p "$LOG_DIR" "$AGENTS_DIR"
+  cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key><string>$LABEL</string>
+    <key>Label</key><string>$label</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$JARVIS</string>
-        <string>scheduler</string>
-        <string>start</string>
-    </array>
+${args}    </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key><string>$(dirname "$JARVIS"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
-    <key>StandardOutPath</key><string>$LOG_DIR/scheduler.log</string>
-    <key>StandardErrorPath</key><string>$LOG_DIR/scheduler.err</string>
+    <key>StandardOutPath</key><string>$LOG_DIR/$log.log</string>
+    <key>StandardErrorPath</key><string>$LOG_DIR/$log.err</string>
 </dict>
 </plist>
-EOF
-launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+PLIST
+  launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$plist"
+}
+
+echo "→ Installing scheduler agent (survives reboots)"
+install_agent com.openjarvis.scheduler scheduler scheduler start
+
+echo "→ Installing clap-to-talk listener"
+install_agent com.openjarvis.listen listen listen
 
 echo
-echo "Done. Check with: jarvis scheduler list   |   tail -f $LOG_DIR/scheduler.log"
+echo "Done. Clap twice near the Mac and Jarvis will answer."
+echo "macOS asks for Microphone access the first time — allow it."
+echo "Logs: $LOG_DIR   |   Tasks: jarvis scheduler list"
 echo "Note: ANTHROPIC_API_KEY is not inherited by launchd; for cloud research"
-echo "add it under EnvironmentVariables in $PLIST (or keep research local)."
+echo "add it under EnvironmentVariables in $AGENTS_DIR/com.openjarvis.scheduler.plist."

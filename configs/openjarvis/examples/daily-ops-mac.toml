@@ -7,6 +7,7 @@
 #   2. Scheduled monitor — `jarvis scheduler ...` (operative agent with memory)
 #   3. Deep research     — GUI Deep Research / `jarvis ask --agent deep_research`
 #   4. Code assistant    — `jarvis ask --agent orchestrator "..."`
+#   5. Clap to talk      — `jarvis listen` (clap twice, then speak)
 #
 # Requirements:
 #   - Ollama (https://ollama.com) + `ollama pull qwen3.5:9b`
@@ -46,6 +47,18 @@ enabled = [
 
 [tools.storage]
 default_backend = "sqlite"
+
+# ─── Voice: the Jarvis British butler, 100% local ───────────
+# `jarvis listen` — clap twice, then speak.
+
+[speech]
+backend = "faster-whisper"         # Local speech-to-text
+model = "base"                     # "small" = more accurate, slower
+language = ""                      # Auto-detect (Portuguese or English)
+compute_type = "int8"              # Apple Silicon CPU-friendly
+tts_backend = "kokoro"
+voice_id = "bm_george"             # The Jarvis voice; "pm_alex" for Portuguese
+voice_speed = 1.1
 
 # ─── Morning Digest ─────────────────────────────────────────
 

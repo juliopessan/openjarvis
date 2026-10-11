@@ -47,4 +47,6 @@ def test_daily_ops_mac_preset_loads(tmp_path: Path) -> None:
     assert config.digest.enabled is True
     assert config.digest.timezone == "America/Sao_Paulo"
     assert config.digest.tts_backend == "kokoro"
+    assert config.speech.tts_backend == "kokoro"
+    assert config.speech.voice_id == "bm_george"
     check_bind_safety(config.server.host, api_key="")
