@@ -1,0 +1,67 @@
+name: Desktop macOS (unsigned, personal build)
+
+# Builds the desktop app as an unsigned Apple Silicon .dmg and attaches it to
+# the run as an artifact. Meant for forks and personal use: it needs NO
+# secrets (no Apple certificate, no updater signing key, no Supabase key),
+# unlike desktop.yml which publishes signed releases.
+#
+# Run it from the Actions tab ("Run workflow"), then download the
+# `OpenJarvis-macos-arm64` artifact. On first launch macOS will say the app
+# is from an unidentified developer: right-click the app -> Open, or allow it
+# in System Settings -> Privacy & Security.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Use the reviewed npm toolchain
+        run: npm install --global npm@11.19.0
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'frontend/src-tauri -> target'
+
+      # The updater in tauri.conf.json points at the upstream project's
+      # releases. A personal build must never replace itself with upstream's
+      # app (that would drop its own features), so point it at this repository
+      # instead; with no release there, the update check simply finds nothing.
+      - name: Build unsigned .dmg
+        working-directory: frontend
+        env:
+          # First-launch clone (when no local checkout exists) uses this fork.
+          OPENJARVIS_REPO_URL: https://github.com/${{ github.repository }}.git
+          UPDATER_ENDPOINT: https://github.com/${{ github.repository }}/releases/download/desktop-latest/latest.json
+        run: |
+          set -euo pipefail
+          npx tauri build --bundles dmg \
+            --config "{\"plugins\":{\"updater\":{\"endpoints\":[\"${UPDATER_ENDPOINT}\"]}}}"
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenJarvis-macos-arm64
+          path: frontend/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

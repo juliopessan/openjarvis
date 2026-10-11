@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CLAUDE_MODELS,
+  ClaudeCloudSetup,
   CustomEndpointSetup,
   InferenceRecoveryButton,
   InferenceSourceChooser,
@@ -19,6 +21,36 @@ describe('first-run inference source navigation', () => {
   it('lets custom endpoint setup cancel safely back to the chooser', () => {
     expect(inferenceSetupReducer('choose', 'choose_custom')).toBe('custom');
     expect(inferenceSetupReducer('custom', 'back')).toBe('choose');
+  });
+
+  it('navigates to and back from the Claude (cloud) step', () => {
+    expect(inferenceSetupReducer('choose', 'choose_cloud')).toBe('cloud');
+    expect(inferenceSetupReducer('cloud', 'back')).toBe('choose');
+  });
+
+  it('offers Claude in the chooser without starting anything', () => {
+    const html = renderToStaticMarkup(<InferenceSourceChooser onChoose={vi.fn()} />);
+
+    expect(html).toContain('Claude (API da Anthropic)');
+    expect(html).toContain('Nada é instalado ou baixado');
+  });
+
+  it('defaults the cloud setup to Haiku 5.5 and requires an API key', () => {
+    expect(CLAUDE_MODELS[0].id).toBe('claude-haiku-5-5');
+    const html = renderToStaticMarkup(
+      <ClaudeCloudSetup onCancel={vi.fn()} onConfirm={vi.fn()} />,
+    );
+
+    expect(html).toMatch(/aria-label="Chave da API Anthropic"[^>]*required/);
+    expect(html).toMatch(/type="password"/);
+    expect(html).toContain('chaveiro do sistema');
+    expect(html).toContain('O Ollama não será iniciado');
+    expect(html).toContain('Cancelar');
+    for (const model of CLAUDE_MODELS) {
+      expect(html).toContain(model.id);
+    }
+    // No key typed yet: submitting must stay disabled.
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/);
   });
 
   it('renders both sources without claiming either has started', () => {
