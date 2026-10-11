@@ -1182,7 +1182,7 @@ export async function denyAction(actionId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export type InferenceSource = {
-  kind: 'ollama' | 'custom';
+  kind: 'ollama' | 'custom' | 'cloud';
   model?: string;
   host?: string;
   engine?: string;
@@ -1219,6 +1219,34 @@ export async function setInferenceSource(
     // Surface the backend's actionable error strings (e.g. "A server URL is
     // required…", "Could not store the API key…") as proper Error instances.
     throw new Error(e?.message ?? e ?? 'Failed to save inference source');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clap-to-talk listener (desktop only)
+// ---------------------------------------------------------------------------
+
+/** Whether the double-clap listener (`jarvis listen`) is running right now. */
+export async function getClapListener(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<boolean>('get_clap_listener');
+  } catch (e: any) {
+    throw new Error(e?.message ?? e ?? 'Failed to read clap listener state');
+  }
+}
+
+/** Start or stop the listener; resolves to whether it is running afterwards. */
+export async function setClapListener(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) {
+    throw new Error('The clap listener is available in the desktop app only.');
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<boolean>('set_clap_listener', { enabled });
+  } catch (e: any) {
+    throw new Error(e?.message ?? e ?? 'Failed to change clap listener');
   }
 }
 

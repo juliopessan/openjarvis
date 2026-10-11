@@ -26,6 +26,8 @@ import {
   getMemoryStats,
   getInferenceSource,
   setInferenceSource,
+  getClapListener,
+  setClapListener,
   getCloudKeyStatus,
   saveCloudKey,
   fetchToolCredentialStatus,
@@ -294,6 +296,34 @@ export function SettingsPage() {
   const [speechBackendAvailable, setSpeechBackendAvailable] = useState<boolean | null>(null);
   const [ttsBackend, setTtsBackend] = useState<{ available: boolean; backend?: string; voice_id?: string } | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const desktop = isTauri();
+  const [clapEnabled, setClapEnabled] = useState(false);
+  const [clapBusy, setClapBusy] = useState(false);
+  const [clapError, setClapError] = useState('');
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    getClapListener()
+      .then((running) => { if (!cancelled) setClapEnabled(running); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [desktop]);
+
+  const handleClapToggle = useCallback(async () => {
+    if (clapBusy) return;
+    setClapBusy(true);
+    setClapError('');
+    try {
+      setClapEnabled(await setClapListener(!clapEnabled));
+    } catch (e: any) {
+      setClapError(e?.message ?? String(e));
+      setClapEnabled(await getClapListener().catch(() => false));
+    } finally {
+      setClapBusy(false);
+    }
+  }, [clapBusy, clapEnabled]);
 
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => !isAutoUpdateDisabled());
   const [updateCheckState, setUpdateCheckState] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
@@ -918,6 +948,44 @@ export function SettingsPage() {
               </button>
             </SettingRow>
           </Section>
+
+          {/* Voice (desktop only) */}
+          {desktop && (
+            <Section title="Voz">
+              <SettingRow
+                label="👏 Ouvir palmas"
+                description="Bata duas palmas para chamar o Jarvis e falar com ele. Usa o microfone."
+              >
+                <button
+                  role="switch"
+                  aria-checked={clapEnabled}
+                  aria-label="Ouvir palmas"
+                  disabled={clapBusy}
+                  onClick={handleClapToggle}
+                  className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                  style={{
+                    background: clapEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                    border: '1px solid var(--color-border)',
+                    opacity: clapBusy ? 0.6 : 1,
+                    cursor: clapBusy ? 'wait' : 'pointer',
+                  }}
+                >
+                  <span
+                    className="inline-block h-3.5 w-3.5 rounded-full transition-transform"
+                    style={{
+                      background: 'white',
+                      transform: clapEnabled ? 'translateX(18px)' : 'translateX(2px)',
+                    }}
+                  />
+                </button>
+              </SettingRow>
+              {clapError && (
+                <div role="alert" className="text-xs mt-2" style={{ color: 'var(--color-error)' }}>
+                  {clapError}
+                </div>
+              )}
+            </Section>
+          )}
 
           {/* Updates */}
           <Section title="Updates">

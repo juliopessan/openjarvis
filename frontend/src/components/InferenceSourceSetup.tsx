@@ -1,5 +1,5 @@
 import { useReducer, useState, type FormEvent } from 'react';
-import { ArrowLeft, Cpu, Download, Loader2, Server, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Cloud, Cpu, Download, Loader2, Server, ShieldCheck } from 'lucide-react';
 import {
   resetInferenceSource,
   stageInferenceSource,
@@ -7,8 +7,19 @@ import {
   type InferenceSource,
 } from '../lib/api';
 
-export type InferenceSetupStep = 'choose' | 'ollama' | 'custom';
-export type InferenceSetupAction = 'choose_ollama' | 'choose_custom' | 'back';
+export type InferenceSetupStep = 'choose' | 'ollama' | 'custom' | 'cloud';
+export type InferenceSetupAction =
+  | 'choose_ollama'
+  | 'choose_custom'
+  | 'choose_cloud'
+  | 'back';
+
+/** Claude models offered for the hosted source; the first is the default. */
+export const CLAUDE_MODELS = [
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 — mais rápido e barato (recomendado)' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 — equilibrado' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 — mais capaz' },
+] as const;
 export type InferenceSourceSubmission = InferenceSource & { apiKey?: string };
 
 /** Pure navigation state: merely inspecting a source can never start setup. */
@@ -21,6 +32,8 @@ export function inferenceSetupReducer(
       return 'ollama';
     case 'choose_custom':
       return 'custom';
+    case 'choose_cloud':
+      return 'cloud';
     case 'back':
       return 'choose';
     default:
@@ -83,7 +96,7 @@ function SetupFrame({ children }: { children: React.ReactNode }) {
 export function InferenceSourceChooser({
   onChoose,
 }: {
-  onChoose: (source: 'ollama' | 'custom') => void;
+  onChoose: (source: 'ollama' | 'custom' | 'cloud') => void;
 }) {
   return (
     <SetupFrame>
@@ -117,6 +130,22 @@ export function InferenceSourceChooser({
             </span>
             <span className="block text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
               Connect to LM Studio, vLLM, SGLang, llama.cpp, MLX, or another compatible endpoint. Ollama stays off.
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onChoose('cloud')}
+          className="flex items-start gap-4 p-4 rounded-xl text-left transition-all cursor-pointer"
+          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <Cloud size={22} className="shrink-0 mt-0.5" style={{ color: 'var(--color-accent)' }} />
+          <span>
+            <span className="block text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              Claude (API da Anthropic)
+            </span>
+            <span className="block text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+              Usa os modelos Claude pela nuvem. Nada é instalado ou baixado; só é preciso uma chave de API.
             </span>
           </span>
         </button>
@@ -340,6 +369,89 @@ export function CustomEndpointSetup({
   );
 }
 
+export function ClaudeCloudSetup({
+  onCancel,
+  onConfirm,
+  busy = false,
+  error = '',
+}: {
+  onCancel: () => void;
+  onConfirm: (source: InferenceSourceSubmission) => void;
+  busy?: boolean;
+  error?: string;
+}) {
+  const [model, setModel] = useState<string>(CLAUDE_MODELS[0].id);
+  const [apiKey, setApiKey] = useState('');
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onConfirm({ kind: 'cloud', model, apiKey: apiKey.trim() });
+  };
+
+  const fieldStyle = {
+    background: 'var(--color-surface)',
+    color: 'var(--color-text)',
+    border: '1px solid var(--color-border)',
+  };
+
+  return (
+    <SetupFrame>
+      <BackButton onClick={onCancel} label="Cancelar" disabled={busy} />
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-base font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
+            Conectar ao Claude
+          </h2>
+          <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Suas mensagens serão enviadas à API da Anthropic. A chave fica no chaveiro do sistema e
+            nunca é gravada em arquivo. O Ollama não será iniciado.
+          </p>
+        </div>
+        <label className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+          Modelo
+          <select
+            aria-label="Modelo"
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            className="block w-full mt-1.5 px-3 py-2 rounded-lg text-sm outline-none"
+            style={fieldStyle}
+          >
+            {CLAUDE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+          Chave da API Anthropic
+          <input
+            aria-label="Chave da API Anthropic"
+            type="password"
+            required
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="sk-ant-..."
+            autoComplete="off"
+            className="block w-full mt-1.5 px-3 py-2 rounded-lg text-sm outline-none"
+            style={fieldStyle}
+          />
+        </label>
+        {error && <SetupError message={error} />}
+        <button
+          type="submit"
+          disabled={busy || !apiKey.trim()}
+          className="w-full py-3 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: 'var(--color-accent)', color: 'white' }}
+        >
+          {busy && <Loader2 size={16} className="animate-spin" />}
+          {busy ? 'Conectando...' : 'Salvar e continuar'}
+        </button>
+      </form>
+    </SetupFrame>
+  );
+}
+
 export function InferenceSourceSetup({ onStarted }: { onStarted: () => void }) {
   const [step, dispatch] = useReducer(inferenceSetupReducer, 'choose');
   const [busy, setBusy] = useState(false);
@@ -377,9 +489,27 @@ export function InferenceSourceSetup({ onStarted }: { onStarted: () => void }) {
       />
     );
   }
+  if (step === 'cloud') {
+    return (
+      <ClaudeCloudSetup
+        busy={busy}
+        error={error}
+        onCancel={() => dispatch('back')}
+        onConfirm={(source) => void begin(source)}
+      />
+    );
+  }
   return (
     <InferenceSourceChooser
-      onChoose={(source) => dispatch(source === 'ollama' ? 'choose_ollama' : 'choose_custom')}
+      onChoose={(source) =>
+        dispatch(
+          source === 'ollama'
+            ? 'choose_ollama'
+            : source === 'cloud'
+              ? 'choose_cloud'
+              : 'choose_custom',
+        )
+      }
     />
   );
 }

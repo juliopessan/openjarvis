@@ -1,15 +1,18 @@
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
+mod clap_listener;
+use clap_listener::SharedClap;
+
 const OLLAMA_PORT: u16 = 11434;
 const JARVIS_PORT: u16 = 8000;
 const DESKTOP_UV_SYNC_COMMAND: &str =
-    "uv sync --extra desktop --extra inference-cloud --extra inference-google --group desktop-native";
+    "uv sync --extra desktop --extra inference-cloud --extra inference-google --extra voice --group desktop-native";
 
 /// Small, fast model used when startup needs a default Ollama tag.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
@@ -116,6 +119,20 @@ struct BootPlan {
     serve_args: Vec<String>,
 }
 
+/// Repository cloned on first launch when no local checkout is found. Builds
+/// from a fork set `OPENJARVIS_REPO_URL` at compile time to clone their own.
+const REPO_URL: &str = match option_env!("OPENJARVIS_REPO_URL") {
+    Some(url) => url,
+    None => "https://github.com/open-jarvis/OpenJarvis.git",
+};
+
+/// Claude model used for the cloud source when none is configured: the
+/// fastest and cheapest current model, good for spoken answers.
+const DEFAULT_CLOUD_MODEL: &str = "claude-haiku-5-5";
+
+/// Secure-storage name of the Anthropic key the cloud source needs.
+const ANTHROPIC_KEY_NAME: &str = "ANTHROPIC_API_KEY";
+
 /// Default OpenAI-compatible engine key used when a custom endpoint config
 /// omits one (LM Studio is the canonical local server).
 const CUSTOM_FALLBACK_ENGINE: &str = "lmstudio";
@@ -136,6 +153,26 @@ fn boot_plan(cfg: &InferenceConfig, ram_gb: f64) -> BootPlan {
                 serve_args: vec![
                     "--engine".into(),
                     "ollama".into(),
+                    "--model".into(),
+                    model,
+                    "--agent".into(),
+                    "simple".into(),
+                ],
+            }
+        }
+        SourceKind::Cloud => {
+            let model = cfg
+                .model
+                .clone()
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| DEFAULT_CLOUD_MODEL.to_string());
+            BootPlan {
+                launch_ollama: false,
+                model_to_pull: None,
+                engine_host: None,
+                serve_args: vec![
+                    "--engine".into(),
+                    "cloud".into(),
                     "--model".into(),
                     model,
                     "--agent".into(),
@@ -502,11 +539,7 @@ impl SetupStatus {
         Self {
             phase: "starting".into(),
             detail: "Initializing...".into(),
-            source: match cfg.kind {
-                SourceKind::Ollama => "ollama",
-                SourceKind::Custom => "custom",
-            }
-            .into(),
+            source: cfg.kind.as_str().into(),
             requires_source: false,
             ..Self::default()
         }
@@ -1017,11 +1050,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     {
         let mut s = status.lock().await;
         *s = SetupStatus::starting(&cfg);
-        s.source = match cfg.kind {
-            SourceKind::Ollama => "ollama",
-            SourceKind::Custom => "custom",
-        }
-        .into();
+        s.source = cfg.kind.as_str().into();
     }
 
     // For the Ollama path, model resolution may fall back to FALLBACK_MODEL; we
@@ -1151,6 +1180,32 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             s.model_ready = true;
             s.detail = "Model ready.".into();
         }
+    } else if cfg.kind == SourceKind::Cloud {
+        // Hosted Claude: nothing to launch or download, but the key must exist
+        // before `jarvis serve` starts or every request would fail.
+        {
+            let mut s = status.lock().await;
+            s.phase = "model".into();
+            s.detail = "Checking your Anthropic API key...".into();
+        }
+        if !cloud_keys_for_inference(&cfg)
+            .iter()
+            .any(|(name, value)| name == ANTHROPIC_KEY_NAME && !value.is_empty())
+        {
+            let mut s = status.lock().await;
+            s.error = Some(
+                "No Anthropic API key found. Add one in Settings, or choose \
+                 Change inference source below."
+                    .into(),
+            );
+            return;
+        }
+        {
+            let mut s = status.lock().await;
+            s.ollama_ready = true;
+            s.model_ready = true;
+            s.detail = "Claude (cloud) ready.".into();
+        }
     } else {
         // Custom OpenAI-compatible endpoint: never start Ollama, never download.
         let host = plan
@@ -1271,13 +1326,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
         let mut clone_cmd = tokio::process::Command::new(&git_bin);
         clone_cmd
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "https://github.com/open-jarvis/OpenJarvis.git",
-                &clone_target,
-            ])
+            .args(["clone", "--depth", "1", REPO_URL, &clone_target])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
         prepare_subprocess_for_appimage(&mut clone_cmd);
@@ -1293,8 +1342,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                         Clone manually: git clone {} {}",
                         stderr.trim(),
+                        REPO_URL,
                         clone_target,
                     ));
                     return;
@@ -1303,8 +1353,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
-                        e, clone_target,
+                         Clone manually: git clone {} {}",
+                        e, REPO_URL, clone_target,
                     ));
                     return;
                 }
@@ -1489,6 +1539,10 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             "inference-cloud",
             "--extra",
             "inference-google",
+            // `uv sync` is exact: without `voice` it would uninstall Kokoro,
+            // the neural TTS that `jarvis listen` speaks with.
+            "--extra",
+            "voice",
             // openjarvis_rust lives in a uv dependency group (not the published
             // `desktop` extra) so pip installs from PyPI don't require it (#584).
             "--group",
@@ -2385,6 +2439,11 @@ async fn save_cloud_key(
     Ok(())
 }
 
+/// True when an Anthropic key is present in secure storage.
+fn anthropic_key_is_set() -> bool {
+    matches!(secure_store_get(ANTHROPIC_KEY_NAME), Ok(Some(value)) if !value.is_empty())
+}
+
 /// Get which cloud providers have keys configured (without exposing values).
 #[tauri::command]
 async fn get_cloud_key_status() -> Result<serde_json::Value, String> {
@@ -2420,6 +2479,7 @@ async fn set_inference_source(
     let kind = match kind.as_str() {
         "ollama" => SourceKind::Ollama,
         "custom" => SourceKind::Custom,
+        "cloud" => SourceKind::Cloud,
         other => return Err(format!("Unknown inference source kind: {:?}", other)),
     };
     let cfg = InferenceConfig {
@@ -2441,12 +2501,45 @@ async fn set_inference_source(
         }
     }
 
+    if let SourceKind::Cloud = cfg.kind {
+        // Hosted source: there is no endpoint to probe or roll back, so confirm
+        // immediately. The key lives in the same secure storage as Settings.
+        match api_key.as_deref() {
+            Some(key) => secure_store_set(ANTHROPIC_KEY_NAME, key)?,
+            None if !anthropic_key_is_set() => {
+                return Err("An Anthropic API key is required for Claude (cloud).".into());
+            }
+            None => {}
+        }
+        return write_inference_config(&InferenceConfig {
+            confirmed: true,
+            ..cfg
+        });
+    }
+
     let store = SystemInferenceCredentialStore;
     if cfg.confirmed {
         persist_confirmed_inference_config(&cfg, api_key.as_deref(), &store)
     } else {
         stage_pending_inference_config(&cfg, api_key.as_deref(), &store)
     }
+}
+
+/// Whether the clap-to-talk listener is running right now.
+#[tauri::command]
+async fn get_clap_listener(clap: tauri::State<'_, SharedClap>) -> Result<bool, String> {
+    Ok(clap_listener::is_running(clap.inner()).await)
+}
+
+/// Turn the clap-to-talk listener on or off and remember the choice.
+/// Returns whether it is running afterwards.
+#[tauri::command]
+async fn set_clap_listener(
+    enabled: bool,
+    clap: tauri::State<'_, SharedClap>,
+) -> Result<bool, String> {
+    clap_listener::set_enabled(clap.inner(), enabled).await?;
+    Ok(clap_listener::is_running(clap.inner()).await)
 }
 
 /// Pull a model via Ollama (called from frontend download button).
@@ -2487,6 +2580,18 @@ async fn delete_ollama_model(model_name: String) -> Result<serde_json::Value, St
 enum SourceKind {
     Ollama,
     Custom,
+    /// Hosted Claude via the Anthropic API: no local engine, no downloads.
+    Cloud,
+}
+
+impl SourceKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            SourceKind::Ollama => "ollama",
+            SourceKind::Custom => "custom",
+            SourceKind::Cloud => "cloud",
+        }
+    }
 }
 
 impl Default for SourceKind {
@@ -3307,9 +3412,15 @@ pub fn run() {
     let boot_backend_ref = backend.clone();
     let boot_status_ref = status.clone();
 
+    let clap: SharedClap = Arc::new(Mutex::new(None));
+    let clap_for_setup = clap.clone();
+    let clap_for_exit = clap.clone();
+    let status_for_clap = status.clone();
+
     tauri::Builder::default()
         .manage(backend.clone())
         .manage(status.clone())
+        .manage(clap.clone())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -3332,9 +3443,14 @@ pub fn run() {
                 .enabled(false)
                 .build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit OpenJarvis").build(app)?;
+            let clap_pref = clap_listener::read_clap_pref();
+            let clap_item = CheckMenuItemBuilder::with_id("clap", "👏 Ouvir palmas")
+                .checked(clap_pref)
+                .build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show)
+                .item(&clap_item)
                 .separator()
                 .item(&health)
                 .separator()
@@ -3356,12 +3472,34 @@ pub fn run() {
                             }
                         }
                     }
+                    "clap" => {
+                        let app = app.clone();
+                        let item = clap_item.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let clap = app.state::<SharedClap>();
+                            let want = !clap_listener::is_running(clap.inner()).await;
+                            if let Err(err) = clap_listener::set_enabled(clap.inner(), want).await {
+                                eprintln!("Warning: clap listener toggle failed: {err}");
+                            }
+                            // Show the real state, not the optimistic click.
+                            let _ = item.set_checked(clap_listener::is_running(clap.inner()).await);
+                        });
+                    }
                     "quit" => {
                         app.exit(0);
                     }
                     _ => {}
                 })
                 .build(app)?;
+
+            // Resume the listener from the last session once the Python
+            // environment is ready.
+            if clap_pref {
+                tauri::async_runtime::spawn(clap_listener::autostart_when_ready(
+                    clap_for_setup.clone(),
+                    status_for_clap.clone(),
+                ));
+            }
 
             // Create native macOS overlay panel
             #[cfg(target_os = "macos")]
@@ -3422,6 +3560,8 @@ pub fn run() {
             delete_ollama_model,
             save_cloud_key,
             get_cloud_key_status,
+            get_clap_listener,
+            set_clap_listener,
             get_inference_source,
             set_inference_source,
             toggle_overlay,
@@ -3433,7 +3573,9 @@ pub fn run() {
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let b = backend.clone();
+                let c = clap_for_exit.clone();
                 tauri::async_runtime::spawn(async move {
+                    clap_listener::stop(&c).await;
                     b.lock().await.stop_all().await;
                 });
             }
@@ -3457,7 +3599,7 @@ mod tests {
         should_persist_resolved_model, spawn_owned_child, stage_pending_inference_config_at,
         startup_installed_model, upsert_engine_host, uv_sync_stderr_tail, BackendManager,
         InferenceConfig, InferenceCredentialStore, PendingInferenceRollback, SetupStatus,
-        SourceKind, DESKTOP_UV_SYNC_COMMAND, PENDING_INFERENCE_API_KEY,
+        SourceKind, DEFAULT_CLOUD_MODEL, DESKTOP_UV_SYNC_COMMAND, PENDING_INFERENCE_API_KEY,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -3808,6 +3950,64 @@ mod tests {
         assert!(!status.requires_source);
         assert_eq!(status.phase, "starting");
         assert_eq!(status.source, "custom");
+    }
+
+    fn cloud_cfg(model: Option<&str>) -> InferenceConfig {
+        InferenceConfig {
+            kind: SourceKind::Cloud,
+            confirmed: true,
+            model: model.map(str::to_string),
+            host: None,
+            engine: None,
+        }
+    }
+
+    #[test]
+    fn boot_plan_cloud_skips_ollama_and_serves_claude() {
+        let plan = boot_plan(&cloud_cfg(None), 16.0);
+        assert!(!plan.launch_ollama);
+        assert!(plan.model_to_pull.is_none());
+        assert!(plan.engine_host.is_none());
+        assert_eq!(
+            plan.serve_args,
+            [
+                "--engine",
+                "cloud",
+                "--model",
+                DEFAULT_CLOUD_MODEL,
+                "--agent",
+                "simple"
+            ]
+        );
+    }
+
+    #[test]
+    fn boot_plan_cloud_honours_a_configured_model_and_ignores_empty() {
+        let plan = boot_plan(&cloud_cfg(Some("claude-sonnet-5-5")), 16.0);
+        assert_eq!(plan.serve_args[3], "claude-sonnet-5-5");
+        let plan = boot_plan(&cloud_cfg(Some("")), 16.0);
+        assert_eq!(plan.serve_args[3], DEFAULT_CLOUD_MODEL);
+    }
+
+    #[test]
+    fn cloud_source_round_trips_through_json_and_status() {
+        let cfg = parse_configured_inference_config(r#"{"kind":"cloud"}"#).unwrap();
+        assert!(matches!(cfg.kind, SourceKind::Cloud));
+        assert_eq!(SourceKind::Cloud.as_str(), "cloud");
+        assert_eq!(SetupStatus::starting(&cfg).source, "cloud");
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"cloud\""));
+    }
+
+    #[test]
+    fn default_cloud_model_is_a_current_claude_model() {
+        assert!(DEFAULT_CLOUD_MODEL.starts_with("claude-"));
+        assert!(!DEFAULT_CLOUD_MODEL.contains("20")); // no date suffix
+    }
+
+    #[test]
+    fn desktop_sync_keeps_voice_so_uv_does_not_uninstall_kokoro() {
+        assert!(DESKTOP_UV_SYNC_COMMAND.contains("--extra voice"));
     }
 
     #[test]

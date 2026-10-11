@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- Required for the clap-to-talk listener (`jarvis listen`) and voice input:
+       without this string macOS denies microphone access without asking. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>O OpenJarvis usa o microfone para ouvir suas duas palmas e entender seus comandos de voz. / OpenJarvis uses the microphone to hear your double clap and voice commands.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <!-- The desktop API URL is user-configurable, so it cannot be represented
