@@ -95,6 +95,66 @@ class TestJarvisAsk:
             assert result == "Agent response"
             j.close()
 
+    def test_history_precedes_the_query_in_direct_mode(self):
+        from openjarvis.core.types import Message, Role
+
+        engine = _make_engine()
+        history = [
+            Message(role=Role.USER, content="Qual a capital da França?"),
+            Message(role=Role.ASSISTANT, content="Paris."),
+        ]
+        with patch("openjarvis.sdk.get_engine", return_value=("mock", engine)):
+            j = Jarvis(config=JarvisConfig(), model="test-model")
+            j.ask("E a da Itália?", context=False, history=history)
+            sent = engine.generate.call_args.args[0]
+            assert [(m.role, m.content) for m in sent] == [
+                (Role.USER, "Qual a capital da França?"),
+                (Role.ASSISTANT, "Paris."),
+                (Role.USER, "E a da Itália?"),
+            ]
+            j.close()
+
+    def test_history_reaches_the_agent_conversation(self):
+        from openjarvis.agents._stubs import AgentResult
+        from openjarvis.core.registry import AgentRegistry
+        from openjarvis.core.types import Message, Role
+
+        seen = {}
+
+        class RecordingAgent:
+            agent_id = "recording-agent"
+
+            def __init__(self, eng, model, **kwargs):
+                pass
+
+            def run(self, input, context=None, **kwargs):
+                seen["messages"] = [
+                    (m.role, m.content) for m in context.conversation.messages
+                ]
+                return AgentResult(content="ok", turns=1)
+
+        AgentRegistry.register_value("recording-agent", RecordingAgent)
+        history = [
+            Message(role=Role.USER, content="abre o Safari"),
+            Message(role=Role.ASSISTANT, content="Abri o Safari."),
+        ]
+        with patch("openjarvis.sdk.get_engine", return_value=("mock", _make_engine())):
+            j = Jarvis(config=JarvisConfig(), model="test-model")
+            j.ask("e agora o Mail", agent="recording-agent", history=history)
+            j.close()
+        assert seen["messages"][-2:] == [
+            (Role.USER, "abre o Safari"),
+            (Role.ASSISTANT, "Abri o Safari."),
+        ]
+
+    def test_omitting_history_changes_nothing(self):
+        engine = _make_engine()
+        with patch("openjarvis.sdk.get_engine", return_value=("mock", engine)):
+            j = Jarvis(config=JarvisConfig(), model="test-model")
+            j.ask("Hello", context=False)
+            assert len(engine.generate.call_args.args[0]) == 1
+            j.close()
+
     def test_simple_agent_ignores_tool_security_kwargs(self):
         from openjarvis.agents.simple import SimpleAgent
         from openjarvis.core.registry import AgentRegistry

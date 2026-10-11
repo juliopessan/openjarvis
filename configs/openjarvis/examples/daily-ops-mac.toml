@@ -7,7 +7,8 @@
 #   2. Scheduled monitor — `jarvis scheduler ...` (operative agent with memory)
 #   3. Deep research     — GUI Deep Research / `jarvis ask --agent deep_research`
 #   4. Code assistant    — `jarvis ask --agent orchestrator "..."`
-#   5. Clap to talk      — `jarvis listen` (clap twice, then speak)
+#   5. Voice assistant   — `jarvis listen` (say "Hey Jarvis" or clap twice, then
+#                          talk; follow-ups need no new wake-up)
 #
 # Requirements:
 #   - ANTHROPIC_API_KEY exported in your shell (https://console.anthropic.com)
@@ -42,6 +43,8 @@ enabled = [
   # research + memory
   "knowledge_search", "knowledge_sql", "scan_chunks",
   "memory_store", "memory_search", "think", "web_search",
+  # voice commands: open apps/links, volume, music, dark mode (fixed safe list)
+  "mac_control",
   # code
   "code_interpreter", "file_read", "file_write", "shell_exec", "calculator",
 ]
@@ -50,7 +53,7 @@ enabled = [
 default_backend = "sqlite"
 
 # ─── Voice: Jarvis in Brazilian Portuguese, 100% local ──────
-# `jarvis listen` — clap twice, then speak.
+# `jarvis listen` — say "Hey Jarvis" (or clap twice), then talk.
 # Needs: uv sync --extra speech --extra voice  +  brew install espeak-ng
 
 [speech]
@@ -61,6 +64,11 @@ compute_type = "int8"              # Apple Silicon CPU-friendly
 tts_backend = "kokoro"
 voice_id = "pm_alex"               # PT-BR male; "bm_george" = British butler (en)
 voice_speed = 1.05
+
+# Hands-free: the offline "Hey Jarvis" wake word and/or a double clap.
+wake = "both"                      # "jarvis", "clap" or "both"
+wake_threshold = 0.5               # lower = more sensitive (more false wakes)
+follow_up_seconds = 8              # keep listening this long after an answer
 
 # ─── Morning Digest ─────────────────────────────────────────
 

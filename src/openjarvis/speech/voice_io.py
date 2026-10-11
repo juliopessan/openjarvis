@@ -38,6 +38,31 @@ def record_until_silence(
     Returns raw WAV bytes (16-bit mono).
     Raises RuntimeError if sounddevice is not installed.
     """
+    audio, _ = record_utterance(
+        sample_rate=sample_rate,
+        silence_threshold=silence_threshold,
+        silence_seconds=silence_seconds,
+        startup_silence_seconds=startup_silence_seconds,
+        max_seconds=max_seconds,
+    )
+    return audio
+
+
+def record_utterance(
+    *,
+    sample_rate: int = _SAMPLE_RATE,
+    silence_threshold: int = _SILENCE_THRESHOLD,
+    silence_seconds: float = _SILENCE_SECONDS,
+    startup_silence_seconds: float = _STARTUP_SILENCE_SECONDS,
+    max_seconds: float = _MAX_RECORD_SECONDS,
+) -> tuple[bytes, bool]:
+    """Like :func:`record_until_silence`, also reporting whether speech began.
+
+    Returns ``(wav_bytes, heard_speech)``. When nobody speaks within
+    ``startup_silence_seconds`` the recording ends with ``heard_speech=False``,
+    so callers can skip transcription instead of feeding silence to a model
+    that tends to hallucinate text on it.
+    """
     try:
         import sounddevice as sd
     except ImportError:
@@ -77,7 +102,7 @@ def record_until_silence(
                 if silence_count >= silence_chunks:
                     break
 
-    return _frames_to_wav(frames, sample_rate)
+    return _frames_to_wav(frames, sample_rate), has_speech
 
 
 def _frames_to_wav(frames: list[bytes], sample_rate: int) -> bytes:
@@ -123,4 +148,4 @@ def play_wav(audio: bytes, sample_rate: int = 24000) -> None:
     sd.wait()
 
 
-__all__ = ["play_wav", "record_until_silence"]
+__all__ = ["play_wav", "record_until_silence", "record_utterance"]

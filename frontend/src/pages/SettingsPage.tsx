@@ -953,13 +953,13 @@ export function SettingsPage() {
           {desktop && (
             <Section title="Voz">
               <SettingRow
-                label="👏 Ouvir palmas"
-                description="Bata duas palmas para chamar o Jarvis e falar com ele. Usa o microfone."
+                label="🎙️ Ouvir o Jarvis"
+                description={'Diga "Hey Jarvis" (ou bata duas palmas) e fale com ele, sem tocar no computador. Usa o microfone.'}
               >
                 <button
                   role="switch"
                   aria-checked={clapEnabled}
-                  aria-label="Ouvir palmas"
+                  aria-label="Ouvir o Jarvis"
                   disabled={clapBusy}
                   onClick={handleClapToggle}
                   className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"

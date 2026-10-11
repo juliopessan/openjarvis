@@ -1627,6 +1627,13 @@ class SpeechConfig:
     tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia"
     voice_id: str = "bm_george"
     voice_speed: float = 1.0
+    # Hands-free listening (`jarvis listen`). ``wake`` picks the trigger:
+    # "jarvis" (the offline wake word), "clap" (double clap) or "both".
+    wake: str = "clap"
+    wake_threshold: float = 0.5  # 0-1 wake-word score needed to trigger
+    # After an answer, keep listening this many seconds for a follow-up before
+    # going back to standby (0 = one question per wake-up).
+    follow_up_seconds: float = 8.0
 
 
 @dataclass(slots=True)

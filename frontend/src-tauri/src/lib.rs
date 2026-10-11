@@ -3444,7 +3444,7 @@ pub fn run() {
                 .build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit OpenJarvis").build(app)?;
             let clap_pref = clap_listener::read_clap_pref();
-            let clap_item = CheckMenuItemBuilder::with_id("clap", "👏 Ouvir palmas")
+            let clap_item = CheckMenuItemBuilder::with_id("clap", "🎙️ Ouvir o Jarvis")
                 .checked(clap_pref)
                 .build(app)?;
 

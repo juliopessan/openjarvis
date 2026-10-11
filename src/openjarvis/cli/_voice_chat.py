@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import queue
+import threading
 from typing import Any, Optional
 
 from rich.markup import escape
@@ -130,9 +132,16 @@ def read_voice_input(console: Any, session: VoiceSession) -> Optional[str] | obj
 def record_voice(
     console: Any,
     session: VoiceSession | None = None,
+    *,
+    wait_seconds: float | None = None,
 ) -> Optional[str] | object:
-    """Record from mic, transcribe, and return text or a loop sentinel."""
-    from openjarvis.speech.voice_io import record_until_silence
+    """Record from mic, transcribe, and return text or a loop sentinel.
+
+    ``wait_seconds`` is how long to wait for the user to start speaking before
+    giving up (``None`` keeps the recorder's default). Returns ``None`` when
+    nothing was said, without calling the transcription model.
+    """
+    from openjarvis.speech.voice_io import record_utterance
 
     active_session = session or VoiceSession()
     backend = active_session.get_stt_backend()
@@ -146,8 +155,11 @@ def record_voice(
         return VOICE_EXIT
 
     console.print("[dim cyan]Listening… (speak now, stops on silence)[/dim cyan]")
+    record_kwargs: dict[str, Any] = {}
+    if wait_seconds is not None:
+        record_kwargs["startup_silence_seconds"] = wait_seconds
     try:
-        audio_bytes = record_until_silence()
+        audio_bytes, heard_speech = record_utterance(**record_kwargs)
     except KeyboardInterrupt:
         return VOICE_EXIT
     except Exception as exc:
@@ -157,6 +169,10 @@ def record_voice(
         # Ctrl-C maps to the chat loop's graceful-exit sentinel above.
         console.print(f"[red]Mic error: {_terminal_safe_text(exc)}[/red]")
         return VOICE_EXIT
+
+    if not heard_speech:
+        # Models hallucinate text on silence ("Obrigado por assistir"); skip them.
+        return None
 
     console.print("[dim]Transcribing…[/dim]")
     try:
@@ -215,4 +231,98 @@ def speak(text: str, console: Any, session: VoiceSession | None = None) -> None:
     )
 
 
-__all__ = ["VOICE_EXIT", "VoiceSession", "read_voice_input", "record_voice", "speak"]
+def _synthesize(
+    text: str, console: Any, session: VoiceSession
+) -> tuple[bytes, int] | None:
+    """Synthesize ``text`` with the first healthy backend; ``None`` on failure."""
+    while (backend := session.get_tts_backend()) is not None:
+        try:
+            voice_id, speed = session.voice_for_backend(backend, console)
+            synth_kwargs: dict[str, Any] = {"output_format": "wav", "speed": speed}
+            if voice_id:
+                synth_kwargs["voice_id"] = voice_id
+            result = backend.synthesize(text, **synth_kwargs)
+            return (result.audio, result.sample_rate) if result.audio else None
+        except Exception as exc:
+            console.print(
+                f"[dim yellow]Voice backend "
+                f"{getattr(backend, 'backend_id', '?')!r} failed: "
+                f"{_terminal_safe_text(exc)}[/dim yellow]"
+            )
+            session.discard_tts_backend()
+    console.print(
+        "[dim yellow]No TTS backend available — install kokoro: "
+        "pip install kokoro[/dim yellow]"
+    )
+    return None
+
+
+_DONE = object()
+
+
+def speak_streaming(
+    text: str, console: Any, session: VoiceSession | None = None
+) -> None:
+    """Speak ``text`` sentence by sentence, synthesizing ahead of playback.
+
+    The next sentence is synthesized while the current one plays, so a long
+    answer starts after one sentence's synthesis time instead of the whole
+    answer's. Single sentences take the plain :func:`speak` path.
+    """
+    from openjarvis.speech.sentences import split_sentences
+    from openjarvis.speech.voice_io import play_wav
+
+    active_session = session or VoiceSession()
+    sentences = split_sentences(text)
+    if len(sentences) <= 1:
+        speak(text, console, active_session)
+        return
+
+    try:
+        active_session.get_voice_preferences()
+    except Exception as exc:
+        console.print(f"[red]Invalid speech config: {_terminal_safe_text(exc)}[/red]")
+        return
+
+    ready: queue.Queue[Any] = queue.Queue(maxsize=1)
+    cancel = threading.Event()
+
+    def produce() -> None:
+        try:
+            for sentence in sentences:
+                audio = _synthesize(sentence, console, active_session)
+                while not cancel.is_set():
+                    try:
+                        ready.put(audio, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
+                if cancel.is_set():
+                    return
+        finally:
+            while not cancel.is_set():
+                try:
+                    ready.put(_DONE, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
+
+    worker = threading.Thread(target=produce, daemon=True)
+    worker.start()
+    try:
+        while (item := ready.get()) is not _DONE:
+            if item:
+                play_wav(item[0], sample_rate=item[1])
+    finally:
+        cancel.set()
+        worker.join(timeout=2.0)
+
+
+__all__ = [
+    "VOICE_EXIT",
+    "VoiceSession",
+    "read_voice_input",
+    "record_voice",
+    "speak",
+    "speak_streaming",
+]

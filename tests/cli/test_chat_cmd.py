@@ -128,7 +128,7 @@ class TestChatCommand:
                 return_value=backend,
             ),
             patch(
-                "openjarvis.speech.voice_io.record_until_silence",
+                "openjarvis.speech.voice_io.record_utterance",
                 side_effect=KeyboardInterrupt,
             ),
         ):
@@ -167,7 +167,7 @@ class TestVoiceInput:
                 "openjarvis.speech._discovery.get_speech_backend",
                 return_value=None,
             ),
-            patch("openjarvis.speech.voice_io.record_until_silence") as record,
+            patch("openjarvis.speech.voice_io.record_utterance") as record,
         ):
             assert record_voice(console) is VOICE_EXIT
 
@@ -189,8 +189,8 @@ class TestVoiceInput:
                 return_value=backend,
             ) as discover,
             patch(
-                "openjarvis.speech.voice_io.record_until_silence",
-                return_value=b"wav",
+                "openjarvis.speech.voice_io.record_utterance",
+                return_value=(b"wav", True),
             ),
         ):
             assert record_voice(console, session) == "first message"
@@ -214,8 +214,8 @@ class TestVoiceInput:
                 return_value=backend,
             ),
             patch(
-                "openjarvis.speech.voice_io.record_until_silence",
-                return_value=b"wav",
+                "openjarvis.speech.voice_io.record_utterance",
+                return_value=(b"wav", True),
             ),
         ):
             result = record_voice(console, session)
@@ -241,7 +241,7 @@ class TestVoiceInput:
                 return_value=backend,
             ),
             patch(
-                "openjarvis.speech.voice_io.record_until_silence",
+                "openjarvis.speech.voice_io.record_utterance",
                 side_effect=error,
             ),
         ):
@@ -264,7 +264,7 @@ class TestVoiceInput:
                 return_value=backend,
             ),
             patch(
-                "openjarvis.speech.voice_io.record_until_silence",
+                "openjarvis.speech.voice_io.record_utterance",
                 side_effect=KeyboardInterrupt,
             ),
         ):
@@ -280,7 +280,7 @@ class TestVoiceInput:
                 return_value=backend,
             ),
             patch(
-                "openjarvis.speech.voice_io.record_until_silence",
+                "openjarvis.speech.voice_io.record_utterance",
                 side_effect=SystemExit(),
             ),
             pytest.raises(SystemExit),

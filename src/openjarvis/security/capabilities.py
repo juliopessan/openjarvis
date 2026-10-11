@@ -256,6 +256,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "knowledge_sql": [Capability.MEMORY_READ],
     "list_scheduled_tasks": [Capability.SCHEDULE_CREATE],
     "llm": [Capability.NETWORK_FETCH],
+    "mac_control": [Capability.TOOL_INVOKE],
     "memory_index": [Capability.MEMORY_WRITE],
     "memory_manage": [Capability.MEMORY_READ, Capability.MEMORY_WRITE],
     "memory_retrieve": [Capability.MEMORY_READ],
