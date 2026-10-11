@@ -254,8 +254,13 @@ class Jarvis:
         max_tokens: Optional[int] = None,
         context: bool = True,
         channel: Optional[Any] = None,
+        history: Optional[List[Message]] = None,
     ) -> str:
-        """Send a query and return the response text."""
+        """Send a query and return the response text.
+
+        ``history`` holds earlier turns (user/assistant messages, oldest
+        first) so a multi-turn conversation keeps its context.
+        """
         result = self.ask_full(
             query,
             model=model,
@@ -265,6 +270,7 @@ class Jarvis:
             max_tokens=max_tokens,
             context=context,
             channel=channel,
+            history=history,
         )
         return result["content"]
 
@@ -279,6 +285,7 @@ class Jarvis:
         max_tokens: Optional[int] = None,
         context: bool = True,
         channel: Optional[Any] = None,
+        history: Optional[List[Message]] = None,
     ) -> Dict[str, Any]:
         """Send a query and return the full result dict.
 
@@ -311,10 +318,11 @@ class Jarvis:
                 max_tokens=max_tokens,
                 context=context,
                 channel=channel,
+                history=history,
             )
 
         # Direct engine mode
-        messages = [Message(role=Role.USER, content=query)]
+        messages = [*(history or []), Message(role=Role.USER, content=query)]
 
         # Memory context injection
         if context and self._config.agent.context_from_memory:
@@ -451,6 +459,7 @@ class Jarvis:
         max_tokens: int,
         context: bool,
         channel: Optional[Any] = None,
+        history: Optional[List[Message]] = None,
     ) -> Dict[str, Any]:
         """Run an agent and return the result dict."""
         import openjarvis.agents  # noqa: F401
@@ -551,6 +560,8 @@ class Jarvis:
             agent_id=agent_name,
         )
         ctx = AgentContext()
+        for earlier in history or []:
+            ctx.conversation.add(earlier)
 
         # Context injection
         if context and self._config.agent.context_from_memory:

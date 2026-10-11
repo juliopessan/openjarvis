@@ -256,6 +256,7 @@ LOCAL_ACCESS_TOOLS = {
     "kg_neighbors",
     "kg_query",
     "knowledge_sql",
+    "mac_control",
     "memory_index",
     "memory_manage",
     "memory_retrieve",

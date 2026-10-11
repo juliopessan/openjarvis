@@ -104,6 +104,10 @@ desktop = [
 # present on PATH (brew install espeak-ng) for out-of-dictionary words.
 voice = [
     "kokoro>=0.9",
+    # Offline "Jarvis" wake word (`jarvis listen`); the hey_jarvis model ships
+    # inside the wheel. 0.5+ pulls tflite-runtime, which has no wheels for
+    # recent Pythons, so stay on the 0.4 API.
+    "openwakeword>=0.4,<0.5",
     "soundfile>=0.12",
     "sounddevice>=0.5",  # play_wav / record_until_silence in speech/voice_io.py
     "numpy>=1.24",

@@ -52,4 +52,6 @@ def test_daily_ops_mac_preset_loads(tmp_path: Path) -> None:
     assert config.speech.tts_backend == "kokoro"
     assert config.speech.voice_id == "pm_alex"
     assert config.speech.language == "pt"
+    assert config.speech.wake == "both"
+    assert config.speech.follow_up_seconds == 8
     check_bind_safety(config.server.host, api_key="")

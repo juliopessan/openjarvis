@@ -43,6 +43,11 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.mac_control  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.code_interpreter  # noqa: F401
 except ImportError:
     pass
