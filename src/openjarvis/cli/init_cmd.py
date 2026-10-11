@@ -274,6 +274,7 @@ def _do_download(engine: str, model: str, spec, console: Console) -> None:
             "morning-digest-mac",
             "morning-digest-linux",
             "morning-digest-minimal",
+            "daily-ops-mac",
             "deep-research",
             "code-assistant",
             "scheduled-monitor",
