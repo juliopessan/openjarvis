@@ -104,6 +104,14 @@ class VoiceSession:
             )
         return substitute, speed
 
+    def get_stt_language(self) -> str:
+        """Return ``[speech] language`` (empty = let the backend auto-detect)."""
+        from openjarvis.core.config import load_config
+
+        config = self._config if self._config is not None else load_config()
+        speech = getattr(config, "speech", None)
+        return (getattr(speech, "language", "") or "").strip()
+
     def discard_tts_backend(self) -> None:
         """Forget a backend that failed synthesis and allow the next fallback."""
         self._tts_backend = None
@@ -152,9 +160,14 @@ def record_voice(
 
     console.print("[dim]Transcribing…[/dim]")
     try:
-        result = backend.transcribe(audio_bytes, format="wav")
+        language = active_session.get_stt_language()
+        if language:
+            result = backend.transcribe(audio_bytes, format="wav", language=language)
+        else:
+            result = backend.transcribe(audio_bytes, format="wav")
         text = result.text.strip()
-        if text:
+        # Whisper renders near-silence as "... ..." -- treat that as nothing.
+        if any(ch.isalnum() for ch in text):
             console.print(f"[bold]You (voice):[/bold] {_terminal_safe_text(text)}")
             return text
         console.print("[dim]Nothing heard — try again.[/dim]")

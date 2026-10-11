@@ -49,6 +49,13 @@ if [[ "${1:-}" == "--init" ]]; then
   "$JARVIS" init --preset daily-ops-mac --force
 fi
 
+# Background agents don't run from the repo, so install the PT-BR persona
+# where the digest also looks for it.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p "$HOME/.openjarvis/prompts/personas"
+cp "$REPO_DIR/configs/openjarvis/prompts/personas/jarvis-ptbr.md" \
+  "$HOME/.openjarvis/prompts/personas/"
+
 echo "→ Morning briefing: weekdays 07:00 ($TZ_NAME)"
 "$JARVIS" digest --schedule "0 7 * * 1-5"
 
@@ -58,14 +65,14 @@ echo "→ Inbox monitor: weekdays 09:00, 13:00, 17:00"
 "$JARVIS" scheduler create \
   "Review new emails and calendar changes since your last run. Flag anything \
 urgent or needing my reply today, track open commitments in memory, and give a \
-short prioritized list." \
+short prioritized list. Reply in Brazilian Portuguese." \
   --type cron --value "0 9,13,17 * * 1-5" --timezone "$TZ_NAME" \
   --agent operative --tools "$MONITOR_TOOLS"
 
 echo "→ End-of-day wrap-up: weekdays 18:30"
 "$JARVIS" scheduler create \
   "Summarize what moved today using your memory notes: decisions, open items, \
-and the top 3 priorities for tomorrow." \
+and the top 3 priorities for tomorrow. Reply in Brazilian Portuguese." \
   --type cron --value "30 18 * * 1-5" --timezone "$TZ_NAME" \
   --agent operative --tools "$MONITOR_TOOLS"
 
@@ -73,7 +80,7 @@ echo "→ Weekly market research: Mondays 08:00"
 "$JARVIS" scheduler create \
   "Research the most relevant news of the past week on enterprise AI agents, \
 multi-cloud (AWS, Azure, GCP) and AI architecture. Cite sources and highlight \
-what matters for a solutions architect." \
+what matters for a solutions architect. Reply in Brazilian Portuguese." \
   --type cron --value "0 8 * * 1" --timezone "$TZ_NAME" \
   --agent deep_research --tools "web_search,knowledge_search,think"
 

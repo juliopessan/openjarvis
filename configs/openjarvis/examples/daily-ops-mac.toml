@@ -49,17 +49,18 @@ enabled = [
 [tools.storage]
 default_backend = "sqlite"
 
-# ─── Voice: the Jarvis British butler, 100% local ───────────
+# ─── Voice: Jarvis in Brazilian Portuguese, 100% local ──────
 # `jarvis listen` — clap twice, then speak.
+# Needs: uv sync --extra speech --extra voice  +  brew install espeak-ng
 
 [speech]
 backend = "faster-whisper"         # Local speech-to-text
 model = "base"                     # "small" = more accurate, slower
-language = ""                      # Auto-detect (Portuguese or English)
+language = "pt"                    # Português; "" = auto-detect, "en" = English
 compute_type = "int8"              # Apple Silicon CPU-friendly
 tts_backend = "kokoro"
-voice_id = "bm_george"             # The Jarvis voice; "pm_alex" for Portuguese
-voice_speed = 1.1
+voice_id = "pm_alex"               # PT-BR male; "bm_george" = British butler (en)
+voice_speed = 1.05
 
 # ─── Morning Digest ─────────────────────────────────────────
 
@@ -67,10 +68,10 @@ voice_speed = 1.1
 enabled = true
 schedule = "0 7 * * 1-5"           # 7 AM, weekdays
 timezone = "America/Sao_Paulo"
-persona = "jarvis"
+persona = "jarvis-ptbr"               # Portuguese; "jarvis" = English
 honorific = "Julio"
 tts_backend = "kokoro"             # Local TTS, no API key ("cartesia" for premium)
-voice_id = "bm_george"             # British male
+voice_id = "pm_alex"               # PT-BR male
 voice_speed = 1.15
 
 sections = ["messages", "calendar", "world"]
