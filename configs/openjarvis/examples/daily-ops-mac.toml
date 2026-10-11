@@ -1,0 +1,72 @@
+# Daily Ops — Mac (Apple Silicon), local-first with Claude for heavy lifting
+# Install with: jarvis init --preset daily-ops-mac --force
+# Then run:     scripts/daily_ops_setup.sh   (schedules the recurring tasks)
+#
+# One config for four jobs:
+#   1. Morning briefing  — `jarvis digest`        (Gmail, Calendar, Tasks, news)
+#   2. Scheduled monitor — `jarvis scheduler ...` (operative agent with memory)
+#   3. Deep research     — GUI Deep Research / `jarvis ask --agent deep_research`
+#   4. Code assistant    — `jarvis ask --agent orchestrator "..."`
+#
+# Requirements:
+#   - Ollama (https://ollama.com) + `ollama pull qwen3.5:9b`
+#   - ANTHROPIC_API_KEY in your shell for the cloud model (optional;
+#     without it everything stays local)
+#   - `jarvis connect gdrive` (one OAuth covers Gmail / Calendar / Tasks)
+
+[engine]
+default = "ollama"
+
+[intelligence]
+default_model = "qwen3.5:9b"       # Everyday chat, digest, monitoring: local
+model_code = "qwen3.5:9b"          # Swap for "qwen3.5:35b" with 32GB+ RAM
+temperature = 0.3
+
+# Deep Research plans with Claude: quality matters more than cost here.
+# Leave both empty to keep research 100% local.
+[deep_research]
+engine = "cloud"
+model = "claude-sonnet-4-6"
+
+[agent]
+default_agent = "orchestrator"     # Multi-turn with automatic tool selection
+max_turns = 12
+context_from_memory = true
+
+[tools]
+enabled = [
+  # briefing
+  "digest_collect", "text_to_speech",
+  # research + memory
+  "knowledge_search", "knowledge_sql", "scan_chunks",
+  "memory_store", "memory_search", "think", "web_search",
+  # code
+  "code_interpreter", "file_read", "file_write", "shell_exec", "calculator",
+]
+
+[tools.storage]
+default_backend = "sqlite"
+
+# ─── Morning Digest ─────────────────────────────────────────
+
+[digest]
+enabled = true
+schedule = "0 7 * * 1-5"           # 7 AM, weekdays
+timezone = "America/Sao_Paulo"
+persona = "jarvis"
+honorific = "Julio"
+tts_backend = "kokoro"             # Local TTS, no API key ("cartesia" for premium)
+voice_id = "bm_george"             # British male
+voice_speed = 1.15
+
+sections = ["messages", "calendar", "world"]
+
+[digest.messages]
+sources = ["gmail", "google_tasks"]
+# Add any of: "slack", "notion", "github_notifications", "imessage"
+
+[digest.calendar]
+sources = ["gcalendar"]
+
+[digest.world]
+sources = ["hackernews", "news_rss"]

@@ -73,6 +73,7 @@ from the [latest release](https://github.com/open-jarvis/OpenJarvis/releases).
 | `deep-research` | Multi-hop research across indexed docs with citations |
 | `code-assistant` | Agent with code execution, file I/O, and shell access |
 | `scheduled-monitor` | Stateful agent on a schedule with memory |
+| `daily-ops-mac` | All-in-one routine: briefing, scheduled monitor, Claude-backed research, code agent (pair with `scripts/daily_ops_setup.sh`) |
 | `chat-simple` | Lightweight conversation, no tools |
 
 Example:

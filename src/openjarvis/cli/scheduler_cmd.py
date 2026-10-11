@@ -52,15 +52,33 @@ def scheduler() -> None:
 )
 @click.option("--agent", default="simple", help="Agent to use for execution.")
 @click.option("--tools", default="", help="Comma-separated tool names.")
+@click.option(
+    "--timezone",
+    "timezone_name",
+    default="",
+    help="IANA timezone for cron schedules (e.g. America/Sao_Paulo). Defaults to UTC.",
+)
 def scheduler_create(
     prompt: str,
     schedule_type: str,
     schedule_value: str,
     agent: str,
     tools: str,
+    timezone_name: str,
 ) -> None:
     """Create a new scheduled task."""
     console = Console()
+    metadata: dict = {}
+    if timezone_name:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise click.BadParameter(
+                f"Unknown timezone {timezone_name!r}", param_hint="--timezone"
+            ) from exc
+        metadata["timezone"] = timezone_name
     store = _get_store()
     try:
         sched = _get_scheduler(store)
@@ -70,6 +88,7 @@ def scheduler_create(
             schedule_value=schedule_value,
             agent=agent,
             tools=tools,
+            metadata=metadata,
         )
         console.print(f"[green]Created task {task.id}[/green]")
         console.print(f"  Type: {task.schedule_type}")
@@ -78,6 +97,8 @@ def scheduler_create(
         console.print(f"  Agent: {task.agent}")
         if task.tools:
             console.print(f"  Tools: {task.tools}")
+        if timezone_name:
+            console.print(f"  Timezone: {timezone_name}")
     finally:
         store.close()
 
