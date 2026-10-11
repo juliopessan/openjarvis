@@ -172,6 +172,36 @@ def _is_codex_model(model: str) -> bool:
     return model.startswith("codex/")
 
 
+# Claude models that reject sampling params: Opus 4.7+ and the 5.x family
+# return a 400 for ``temperature`` (Sonnet/Haiku 5.5 accept only the default).
+_ANTHROPIC_NO_SAMPLING = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-5",
+    "claude-fable",
+    "claude-mythos",
+)
+# Models that reject forced ``tool_choice`` (``any`` / ``tool``) with a 400.
+_ANTHROPIC_NO_FORCED_TOOL = (
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+)
+
+
+def _anthropic_accepts_temperature(model: str) -> bool:
+    name = model.lower()
+    return not any(p in name for p in _ANTHROPIC_NO_SAMPLING)
+
+
+def _anthropic_accepts_forced_tool(model: str) -> bool:
+    name = model.lower()
+    return not any(p in name for p in _ANTHROPIC_NO_FORCED_TOOL)
+
+
 def _is_anthropic_model(model: str) -> bool:
     # Aggregator-prefixed IDs are excluded: "atlascloud/anthropic/claude-*"
     # contains "claude" but must go to the aggregator, not the Anthropic SDK.
@@ -757,9 +787,10 @@ class CloudEngine(InferenceEngine):
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if _anthropic_accepts_temperature(model):
+            create_kwargs["temperature"] = temperature
         if system_text:
             create_kwargs["system"] = system_text
 
@@ -783,10 +814,17 @@ class CloudEngine(InferenceEngine):
                     create_kwargs["tools"] = [json_tool]
                 else:
                     create_kwargs["tools"].append(json_tool)
-                create_kwargs["tool_choice"] = {
-                    "type": "tool",
-                    "name": "json_output",
-                }
+                if _anthropic_accepts_forced_tool(model):
+                    create_kwargs["tool_choice"] = {
+                        "type": "tool",
+                        "name": "json_output",
+                    }
+                else:
+                    create_kwargs["tool_choice"] = {"type": "auto"}
+                    create_kwargs["system"] = (
+                        create_kwargs.get("system", "")
+                        + "\n\nRespond by calling the json_output tool."
+                    ).strip()
 
         t0 = time.monotonic()
         resp = self._anthropic_client.messages.create(**create_kwargs)
@@ -1436,9 +1474,10 @@ class CloudEngine(InferenceEngine):
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if _anthropic_accepts_temperature(model):
+            create_kwargs["temperature"] = temperature
         if system_text:
             create_kwargs["system"] = system_text
         with self._anthropic_client.messages.stream(**create_kwargs) as stream:
@@ -1895,9 +1934,10 @@ class CloudEngine(InferenceEngine):
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if _anthropic_accepts_temperature(model):
+            create_kwargs["temperature"] = temperature
         if system_text:
             create_kwargs["system"] = system_text
         raw_tools = kwargs.pop("tools", None)

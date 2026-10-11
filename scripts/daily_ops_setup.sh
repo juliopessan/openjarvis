@@ -33,6 +33,18 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   exit 0
 fi
 
+# The Claude API key lives in the macOS Keychain, never in the plist files;
+# agents read it at start-up (see install_agent).
+KEYCHAIN_SERVICE="openjarvis-anthropic"
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  security add-generic-password -U -a "$(id -un)" -s "$KEYCHAIN_SERVICE" \
+    -w "$ANTHROPIC_API_KEY"
+  echo "→ Stored ANTHROPIC_API_KEY in Keychain ($KEYCHAIN_SERVICE)"
+elif ! security find-generic-password -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1; then
+  echo "Export ANTHROPIC_API_KEY first (https://console.anthropic.com)." >&2
+  exit 1
+fi
+
 if [[ "${1:-}" == "--init" ]]; then
   "$JARVIS" init --preset daily-ops-mac --force
 fi
@@ -69,7 +81,10 @@ what matters for a solutions architect." \
 install_agent() {
   local label="$1" log="$2" plist="$AGENTS_DIR/$1.plist" args="" arg
   shift 2
-  for arg in "$JARVIS" "$@"; do
+  # sh wrapper: fetch the key from Keychain at start-up, then exec jarvis.
+  local boot="export ANTHROPIC_API_KEY=\"\$(security find-generic-password"
+  boot+=" -s $KEYCHAIN_SERVICE -w)\"; exec \"\$0\" \"\$@\""
+  for arg in /bin/sh -c "$boot" "$JARVIS" "$@"; do
     args+="        <string>$arg</string>"$'\n'
   done
   mkdir -p "$LOG_DIR" "$AGENTS_DIR"
@@ -107,5 +122,5 @@ echo
 echo "Done. Clap twice near the Mac and Jarvis will answer."
 echo "macOS asks for Microphone access the first time — allow it."
 echo "Logs: $LOG_DIR   |   Tasks: jarvis scheduler list"
-echo "Note: ANTHROPIC_API_KEY is not inherited by launchd; for cloud research"
-echo "add it under EnvironmentVariables in $AGENTS_DIR/com.openjarvis.scheduler.plist."
+echo "The Claude API key is read from Keychain ($KEYCHAIN_SERVICE) at start-up."
+echo "After rotating it: export the new key and re-run this script."

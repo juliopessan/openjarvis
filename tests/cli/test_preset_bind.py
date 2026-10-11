@@ -42,7 +42,9 @@ def test_daily_ops_mac_preset_loads(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     config = load_config(config_path)
-    assert config.engine.default == "ollama"
+    assert config.engine.default == "cloud"
+    assert config.intelligence.default_model == "claude-haiku-5-5"
+    assert config.deep_research.model == "claude-haiku-5-5"
     assert config.deep_research.engine == "cloud"
     assert config.digest.enabled is True
     assert config.digest.timezone == "America/Sao_Paulo"
